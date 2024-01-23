@@ -3,32 +3,45 @@
 Script that provides some stats about Nginx logs stored in MongoDB
 """
 from pymongo import MongoClient
-from collections import Counter
 
-def print_stats(collection):
-    total_logs = collection.count_documents({})
-    print(f"{total_logs} logs")
 
-    methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
+def nginx_stats_check():
+    """Providing stats about nginx logs stored in MongoDB"""
+    cl = MongoClient()
+    col = cl.logs.nginx
+    num_of_documents = col.count_documents({})
+    print("{} logs".format(num_of_documents))
     print("Methods:")
-    for method in methods:
-        count = collection.count_documents({"method": method})
-        print(f"\tmethod {method}: {count}")
 
-    status_check_count = collection.count_documents({"method": "GET", "path": "/status"})
-    print(f"{status_check_count} status check")
+    methods_l = ["GET", "POST", "PUT", "PATCH", "DELETE"]
+
+    for met in methods_l:
+        meth_count = col.count_documents({"method": met})
+        print("\tmethod {}: {}".format(met, meth_count))
+    st = col.count_documents({"method": "GET", "path": "/status"})
+    print("{} status check".format(st))
 
     print("IPs:")
-    ip_counts = Counter(log['ip'] for log in collection.find())
-    for ip, count in ip_counts.most_common(10):
-        print(f"\t{ip}: {count}")
+    t_IPs = col.aggregate([
+        {"$group":
+         {
+             "_id": "$ip",
+             "count": {"$sum": 1}
+         }
+         },
+        {"$sort": {"count": -1}},
+        {"$limit": 10},
+        {"$project": {
+            "_id": 0,
+            "ip": "$_id",
+            "count": 1
+        }}
+    ])
+    for t_ip in t_IPs:
+        c = t_ip.get("count")
+        ip_add = t_ip.get("ip")
+        print("\t{}: {}".format(ip_add, c))
+
 
 if __name__ == "__main__":
-    client = MongoClient('mongodb://localhost:27017/')
-    db = client.logs
-    nginx_collection = db.nginx
-
-    print_stats(nginx_collection)
-
-    client.close()
-
+    nginx_stats_check()
