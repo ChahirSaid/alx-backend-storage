@@ -1,42 +1,30 @@
 #!/usr/bin/env python3
-
+"""Web Caching and tracker"""
 import requests
-import time
-from functools import lru_cache
+import redis
+from functools import wraps
+from typing import Callable
+
+store = redis.Redis()
 
 
-# Dictionary to track URL accesses
-url_access_count = {}
-
-
-# Decorator to cache results and track URL accesses
-def cache_and_track(func):
-    @lru_cache(maxsize=100)
+def count_url_access(method: Callable) -> Callable:
+    """Decorator counting times a url is accessed"""
+    @wraps(method)
     def wrapper(url):
-        # Make the request to the URL and fetch the content
-        response = requests.get(url)
-        page_content = response.text
+        store.incr(f"count:{url}")
+        c_html = store.get(f"cached:{url}")
+        if c_html:
+            return c_html.decode('utf-8')
 
-        # Update the URL access count
-        url_access_count[url] = url_access_count.get(url, 0) + 1
-
-        time.sleep(10)  # Simulate slow response
-
-        return page_content
-
+        html = method(url)
+        store.setex(f"cached:{url}", 10, html)
+        return html
     return wrapper
 
 
-# Function to get the page content (decorated with cache_and_track)
-@cache_and_track
+@count_url_access
 def get_page(url: str) -> str:
-    return url
-
-
-# Example usage
-if __name__ == "__main__":
-    url_ = "http://slowwly.robertomurray.co.uk/delay/1000/url/"
-    url = f"{url_}http://www.google.com"
-    print(get_page(url))
-    print(get_page(url))
-    print(f"Access count for {url}: {url_access_count[url]}")
+    """Returning html content of a url"""
+    result = requests.get(url)
+    return result.text
